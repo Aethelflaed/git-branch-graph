@@ -21,7 +21,7 @@ impl std::fmt::Display for CommitDisplay<'_> {
 pub struct Repository {
     pub directory: PathBuf,
     pub branch_names: Vec<String>,
-    pub id_to_branch: HashMap<Commit, String>,
+    pub id_to_branches: HashMap<Commit, HashSet<String>>,
     pub nodes_to_children: HashMap<Commit, HashSet<Commit>>,
     pub nodes_to_parents: HashMap<Commit, HashSet<Commit>>,
     pub merge_bases: HashMap<(Commit, Commit), Commit>,
@@ -60,7 +60,7 @@ impl Repository {
         Ok(Repository {
             directory,
             branch_names: Default::default(),
-            id_to_branch: Default::default(),
+            id_to_branches: Default::default(),
             nodes_to_children: Default::default(),
             nodes_to_parents: Default::default(),
             merge_bases: Default::default(),
@@ -72,7 +72,7 @@ impl Repository {
             self.read_branches()?;
         }
 
-        let mut new_nodes = self.id_to_branch.keys().cloned().collect::<LinkedList<_>>();
+        let mut new_nodes = self.id_to_branches.keys().cloned().collect::<LinkedList<_>>();
         for node in &new_nodes {
             self.nodes_to_children
                 .insert(node.clone(), Default::default());
@@ -240,8 +240,12 @@ impl Repository {
 
     fn name(&self, commit: &Commit) -> ColoredString {
         let hash = commit.0.as_str()[0..9].red();
-        if let Some(name) = self.id_to_branch.get(commit) {
-            format!("{} {}", hash, name.as_str().green(),).into()
+        if let Some(names) = self.id_to_branches.get(commit) {
+            format!(
+                "{} {}",
+                hash,
+                names.iter().map(|name| format!("{}", name.as_str().green())).collect::<Vec<_>>().join(", "),
+            ).into()
         } else {
             hash
         }
@@ -270,7 +274,7 @@ impl Repository {
             .join(branch.as_str());
         let id = std::fs::read_to_string(branch_path)?.trim().to_string();
         self.branch_names.push(branch.clone());
-        self.id_to_branch.insert(id.clone().into(), branch.clone());
+        self.id_to_branches.entry(id.clone().into()).or_default().insert(branch.clone());
 
         Ok(())
     }
