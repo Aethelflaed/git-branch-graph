@@ -1,5 +1,5 @@
 [package]
-name = "git-branch-tree"
+name = "git-branch-graph"
 version = "0.1.0"
 edition = "2021"
 
@@ -7,6 +7,10 @@ edition = "2021"
 anyhow = "1.0.95"
 clap = { version = "4.5.28", features = ["derive"] }
 clap-verbosity-flag = "3.0.2"
+colored = "3.0.0"
+derive_more = { version = "2.0.1", features = ["from"] }
+duct = "0.13.7"
 env_logger = "0.11.6"
 log = "0.4.25"
 systemd-journal-logger = "2.2.0"
+walkdir = "2.5.0"
