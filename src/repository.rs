@@ -20,6 +20,8 @@ impl std::fmt::Display for CommitDisplay<'_> {
 #[derive(Debug)]
 pub struct Repository {
     pub directory: PathBuf,
+    pub config: gix_config::File<'static>,
+    pub remote: bool,
     pub branch_names: Vec<String>,
     pub id_to_branches: HashMap<Commit, HashSet<String>>,
     pub nodes_to_children: HashMap<Commit, HashSet<Commit>>,
@@ -41,9 +43,10 @@ impl TryFrom<Cli> for Repository {
         };
 
         let mut repo = Repository::new(directory)?;
+        repo.remote = cli.remote;
 
         for branch in cli.branches {
-            repo.add_branch(branch)?;
+            repo.add_branch("heads", branch)?;
         }
 
         Ok(repo)
@@ -57,8 +60,12 @@ impl Repository {
             anyhow::bail!("Not a git directory: {:?}", directory);
         }
 
+        let config = gix_config::File::from_git_dir(directory.join(".git"))?;
+
         Ok(Repository {
             directory,
+            config,
+            remote: false,
             branch_names: Default::default(),
             id_to_branches: Default::default(),
             nodes_to_children: Default::default(),
@@ -257,7 +264,7 @@ impl Repository {
         for entry in WalkDir::new(&refs_dir).into_iter().filter_map(|e| e.ok()) {
             if entry.path().is_file() {
                 if let Ok(Some(name)) = entry.path().strip_prefix(&refs_dir).map(|p| p.to_str()) {
-                    self.add_branch(name)?;
+                    self.add_branch("heads", name)?;
                 }
             }
         }
@@ -265,16 +272,32 @@ impl Repository {
         Ok(())
     }
 
-    fn add_branch<T: ToString>(&mut self, branch: T) -> Result<()> {
+    fn add_branch<T: ToString>(&mut self, dir: &str, branch: T) -> Result<()> {
         let branch = branch.to_string();
         log::debug!("add_branch: {:?}", &branch);
         let branch_path = self
             .directory
-            .join(".git/refs/heads/")
+            .join(".git/refs")
+            .join(dir)
             .join(branch.as_str());
         let id = std::fs::read_to_string(branch_path)?.trim().to_string();
         self.branch_names.push(branch.clone());
         self.id_to_branches.entry(id.clone().into()).or_default().insert(branch.clone());
+
+        if dir != "heads" || !self.remote {
+            return Ok(());
+        }
+
+        if let Ok(section) = self.config.section("branch", Some(branch.as_str().into())) {
+            if let Some(remote) = section.body().value("remote") {
+                if let Some(merge) = section.body().value("merge") {
+                    let merge = format!("{}", merge);
+                    if let Some(merge) = merge.strip_prefix("refs/heads/") {
+                        self.add_branch("remotes", format!("{}/{}", remote, merge))?;
+                    }
+                }
+            }
+        }
 
         Ok(())
     }

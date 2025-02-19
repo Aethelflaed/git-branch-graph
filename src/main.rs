@@ -15,6 +15,10 @@ pub struct Cli {
     #[arg(short = 'C', long, value_name = "PATH")]
     pub directory: Option<PathBuf>,
 
+    /// List remote branches
+    #[arg(short, long)]
+    pub remote: bool,
+
     /// Branches
     pub branches: Vec<String>,
 }
