@@ -4,7 +4,6 @@ use colored::{ColoredString, Colorize};
 use duct::cmd;
 use std::collections::{HashMap, HashSet, LinkedList};
 use std::path::PathBuf;
-use walkdir::WalkDir;
 
 #[derive(Debug, Clone, derive_more::From, Hash, Eq, PartialEq, Ord, PartialOrd)]
 pub struct Commit(String);
@@ -79,7 +78,11 @@ impl Repository {
             self.read_branches()?;
         }
 
-        let mut new_nodes = self.id_to_branches.keys().cloned().collect::<LinkedList<_>>();
+        let mut new_nodes = self
+            .id_to_branches
+            .keys()
+            .cloned()
+            .collect::<LinkedList<_>>();
         for node in &new_nodes {
             self.nodes_to_children
                 .insert(node.clone(), Default::default());
@@ -251,22 +254,37 @@ impl Repository {
             format!(
                 "{} {}",
                 hash,
-                names.iter().map(|name| format!("{}", name.as_str().green())).collect::<Vec<_>>().join(", "),
-            ).into()
+                names
+                    .iter()
+                    .map(|name| format!("{}", name.as_str().green()))
+                    .collect::<Vec<_>>()
+                    .join(", "),
+            )
+            .into()
         } else {
             hash
         }
     }
 
     fn read_branches(&mut self) -> Result<()> {
-        let refs_dir = self.directory.join(".git/refs/heads");
-
-        for entry in WalkDir::new(&refs_dir).into_iter().filter_map(|e| e.ok()) {
-            if entry.path().is_file() {
-                if let Ok(Some(name)) = entry.path().strip_prefix(&refs_dir).map(|p| p.to_str()) {
-                    self.add_branch("heads", name)?;
+        let branches = self
+            .config
+            .sections()
+            .filter_map(|section| {
+                if section.header().name() == "branch" {
+                    if let Some(branch) = section.header().subsection_name() {
+                        Some(branch.to_string())
+                    } else {
+                        None
+                    }
+                } else {
+                    None
                 }
-            }
+            })
+            .collect::<Vec<_>>();
+
+        for branch in branches {
+            self.add_branch("heads", branch)?;
         }
 
         Ok(())
@@ -275,14 +293,22 @@ impl Repository {
     fn add_branch<T: ToString>(&mut self, dir: &str, branch: T) -> Result<()> {
         let branch = branch.to_string();
         log::debug!("add_branch: {:?}", &branch);
-        let branch_path = self
-            .directory
-            .join(".git/refs")
-            .join(dir)
-            .join(branch.as_str());
-        let id = std::fs::read_to_string(branch_path)?.trim().to_string();
+
+        let id = cmd!(
+            "git",
+            "-C",
+            self.directory.as_os_str(),
+            "rev-list",
+            "--max-count=1",
+            branch.as_str(),
+        )
+        .read()?;
+
         self.branch_names.push(branch.clone());
-        self.id_to_branches.entry(id.clone().into()).or_default().insert(branch.clone());
+        self.id_to_branches
+            .entry(id.clone().into())
+            .or_default()
+            .insert(branch.clone());
 
         if dir != "heads" || !self.remote {
             return Ok(());

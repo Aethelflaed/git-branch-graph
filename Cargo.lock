@@ -267,7 +267,6 @@ dependencies = [
  "gix-config",
  "log",
  "systemd-journal-logger",
- "walkdir",
 ]
 
 [[package]]
